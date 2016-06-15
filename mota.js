@@ -37,12 +37,12 @@ var ObjPool = {
 };
 
 var Mouse = {
-    target : {},
+    target : null,
     Attach : function(obj) {
         this.target = obj;
     },
     Detach : function() {
-        this.target = {};
+        this.target = null;
     }
 };
 
@@ -64,10 +64,16 @@ var EventManager = {
     MouseMove : function(e) {
         this.currentMousePosition.x = e.localX;
         this.currentMousePosition.y = e.localY;
+        if (Mouse.target != null) {
+            Mouse.target.shape.x = e.localX - Mouse.target.shape.width / 2;
+            Mouse.target.shape.y = e.localY - Mouse.target.shape.height / 2;
+        }
         for (i = 0; i < ObjPool.objects.length; ++i) {
             var obj = ObjPool.objects[i];
+
             if (this.currentMousePosition.x > (obj.absPos()).x && this.currentMousePosition.x < (obj.absPos()).x + obj.shape.width
                 && this.currentMousePosition.y > (obj.absPos()).y && this.currentMousePosition.y < (obj.absPos()).y + obj.shape.height) {
+
                 if((obj.__internal.catchMouse == null) || (obj.__internal.catchMouse == false)) {
                     obj.__internal.catchMouse = true;
                     if (obj.hasOwnProperty("onEntered")) {
@@ -215,8 +221,9 @@ function createBitmap(bitmapData, lifeTime, scale, parent) {
     return bmp;
 }
 
-function createBMPObj(width, height, raw, lifetime, scale, parent) {
+function createBMPObj(width, height, type, lifetime, scale, parent) {
     var obj = ObjPool.Create();
+    var raw = Global.RESOURCES.BITMAPS[type];
     var bmd;
     if (Global.CACHE.BMD.hasOwnProperty(raw)) {
         bmd = Global.CACHE.BMD[raw];
@@ -225,6 +232,7 @@ function createBMPObj(width, height, raw, lifetime, scale, parent) {
         Global.CACHE.BMD[raw] = bmd;
     }
     obj.shape = createBitmap(bmd, lifetime, scale, parent);
+    obj.type = type;
     obj.parent = parent;
     return obj;
 }
@@ -280,6 +288,7 @@ var Global = {
         }
     },
     CANVAS : {
+        EMPTY_CANVAS : {},
         MAP_CANVAS : {},
         GUI_CANVAS : {},
         LEFT_STATUS_CANVAS : {},
@@ -304,31 +313,45 @@ function initMap() {
     for (var i = 0; i < Global.MAP_SIZE.x; i++) {
         for (var j = 0; j < Global.MAP_SIZE.y; j++) {
             Global.MAP[i][j]= {};
-            Global.MAP[i][j].obj =  createBMPObj(32, 32, Global.RESOURCES.BITMAPS.BACKGROUND, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+            Global.MAP[i][j].objects = [];
+            var obj =  createBMPObj(32, 32, "BACKGROUND", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
 
             Global.MAP[i][j].type = Global.BLOCK_TYPE.EMPTY;
-            (Global.MAP[i][j].obj).shape.x = i * Global.BLOCK_SIZE.x;
-            (Global.MAP[i][j].obj).shape.y = j * Global.BLOCK_SIZE.y;
-            (Global.MAP[i][j].obj).onEntered = function() {
+            obj.shape.x = i * Global.BLOCK_SIZE.x;
+            obj.shape.y = j * Global.BLOCK_SIZE.y;
+            obj.x = i;
+            obj.y = j;
+            obj.onClicked = function() {
+                var xx = this.x;
+                var yy = this.y;
+                if (Mouse.target != null && Global.MAP[xx][yy].objects.length <= 1) {
+                    placeObj(Mouse.target.type, this.x, this.y);
+                } else if (Global.MAP[xx][yy].objects.length > 1) {
+                    var obj = Global.MAP[xx][yy].objects.pop();
+                    obj.shape.alpha = 0;
+                }
+            };
+            obj.onEntered = function() {
                 var g = $.createShape({lifeTime:0,x:(this.absPos()).x,y:(this.absPos()).y});
                 g.graphics.moveTo(0, 0);
                 g.graphics.lineStyle(2, 0xFF4040, 1, false);
-                g.graphics.lineTo(32, 0);
-                g.graphics.lineTo(32, 32);
-                g.graphics.lineTo(0, 32);
+                g.graphics.lineTo(Global.BLOCK_SIZE.x, 0);
+                g.graphics.lineTo(Global.BLOCK_SIZE.x, Global.BLOCK_SIZE.y);
+                g.graphics.lineTo(0, Global.BLOCK_SIZE.y);
                 g.graphics.lineTo(0, 0);
                 this.g = g;
             };
-            (Global.MAP[i][j].obj).onLeaved = function() {
+            obj.onLeaved = function() {
                 this.g.graphics.clear();
                 this.g = {};
             };
+            Global.MAP[i][j].objects.push(obj);
         }
     }
 }
 
 function initPlayer() {
-    Global.PLAYER = createBMPObj(32, 32, Global.RESOURCES.BITMAPS.SLM_GREEN, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+    Global.PLAYER = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
     Global.PLAYER.shape.x = Global.BLOCK_SIZE.x * 5;
     Global.PLAYER.shape.y = Global.BLOCK_SIZE.y * 5;
     Global.PLAYER.x = 5;
@@ -374,8 +397,16 @@ function initPlayer() {
     };
 }
 
-function placeObj() {
+function placeObj(type, x, y) {
+    var obj = createBMPObj(32, 32, type, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+    obj.shape.x = Global.BLOCK_SIZE.x * x;
+    obj.shape.y = Global.BLOCK_SIZE.y * y;
+    obj.x = x;
+    obj.y = y;
+    obj.status = Global.DATA[type];
+    Global.MAP[x][y].objects.push(obj);
 
+    Global.MAP[x][y].type = Global.BLOCK_TYPE[type];
 }
 
 function keyDown(key) {
@@ -393,6 +424,7 @@ function keyDown(key) {
 }
 
 function init() {
+
     ScriptManager.clearTimer();
     ScriptManager.clearEl();
     ScriptManager.clearTrigger();
@@ -413,10 +445,14 @@ function init() {
     });
 
     //Global.CACHE.BMD.length = Global.BLOCK_TYPE.CNT;
-    Global.BLOCK_SIZE.x = Global.BLOCK_SIZE.y = Math.min(Player.width / Global.MAP_SIZE.x, Player.height / Global.MAP_SIZE.y);
+    Global.BLOCK_SIZE.x = Global.BLOCK_SIZE.y = Math.floor(Math.min(Player.width / Global.MAP_SIZE.x, Player.height / Global.MAP_SIZE.y));
     Global.MAP_SCALE = Global.BLOCK_SIZE.x / 32;
 
-
+    //Global.CANVAS.EMPTY_CANVAS = createCanvas({
+    //    x: 0,
+    //    y: 0,
+    //    lifeTime: 0
+    //});
     //Player.keyTrigger(function(key){
     //    keyUp(key);
     //},INT_MAX,true);
@@ -424,8 +460,6 @@ function init() {
 }
 
 function editInit() {
-
-
 
 
     Global.CANVAS.MAP_CANVAS = createCanvas({
@@ -440,11 +474,22 @@ function editInit() {
         lifeTime: 0
     });
 
-    var bmp = createBMPObj(32, 32, Global.RESOURCES.BITMAPS.SLM_GREEN, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
-    var bmp2 = createBMPObj(32, 32, Global.RESOURCES.BITMAPS.SLM_GREEN, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
+    var bmp = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
+    var bmp2 = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
     bmp2.shape.x = 32 * Global.MAP_SCALE;
     bmp.onClicked = function() {
-        //trace("bmp1 clicked");
+        if (Mouse.target != null && Mouse.target.type == this.type) {
+            // ScriptManager.popEl(Mouse.target);
+            Mouse.target.shape.alpha = 0;
+            Mouse.Detach();
+        } else {
+            var a = createBMPObj(32, 32, this.type, 0, Global.MAP_SCALE, 0);
+            a.shape.x = (this.absPos()).x;
+            a.shape.y = (this.absPos()).y;
+            a.shape.alpha = 0.5;
+            Mouse.Attach(a);
+        }
+
     };
     bmp2.onClicked = function() {
         //trace("bmp2 clicked");
@@ -483,7 +528,6 @@ function enterBattle(player, monster) {
 function gameInit() {
 
 
-
     Global.CANVAS.MAP_CANVAS = createCanvas({
         x: Player.width/2 - Global.MAP_SIZE.x/2 * Global.BLOCK_SIZE.x,
         y: Player.height/2 - Global.MAP_SIZE.y/2 * Global.BLOCK_SIZE.y,
@@ -502,18 +546,15 @@ function gameInit() {
         lifeTime: 0
     });
 
-    var health = createText("0", {x : 20, y : 50, parent : Global.CANVAS.LEFT_STATUS_CANVAS});
-    health.name = "healthBar";
+    (createText("0", {x : 20, y : 50, parent : Global.CANVAS.LEFT_STATUS_CANVAS})).name = "healthBar";
 
-    var monsterHP = createText("0", {x : 20, y : 50, parent : Global.CANVAS.RIGHT_STATUS_CANVAS});
-    monsterHP.name = "healthBar";
-
+    (createText("0", {x : 20, y : 50, parent : Global.CANVAS.RIGHT_STATUS_CANVAS})).name = "healthBar";
 
 
     initMap();
     initPlayer();
 
-    var m = createBMPObj(32, 32, Global.RESOURCES.BITMAPS.SLM_GREEN, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+    var m = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
     m.shape.x = Global.BLOCK_SIZE.x * 6;
     m.shape.y = Global.BLOCK_SIZE.y * 6;
     m.x = 6;
@@ -525,4 +566,4 @@ function gameInit() {
 }
 
 init();
-gameInit();
+editInit();
