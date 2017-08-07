@@ -1,5 +1,8 @@
 /*---------------copyright by Neil, You, Shanghai Jiaotong University 2016, 5 ------------------*/
 
+/* known issue: Absolute position can only be calculated with a single canvas layer depth.
+*               Mouse callback may prevent collision detection from working. */
+
 var BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
 
 var ObjPool = {
@@ -25,13 +28,16 @@ var ObjPool = {
                     var parent = that.parent;
                     absX += parent.x;
                     absY += parent.y;
-                    //that = that.parent;
+                    /* that = that.parent; */
                 }
                 return {x:absX, y:absY};
             },
-            __internal : {}
+            __internal : {
+                collidedObjects : []
+            }
         };
         this.objects.push(obj);
+        obj.rigid = false;
         return obj;
     }
 };
@@ -46,14 +52,18 @@ var Mouse = {
     }
 };
 
+var time = 0;
+var PIdiv4 = 1.0 / 4.0 * Math.PI;
 var EventManager = {
     currentMousePosition : {
         x : 0,
         y : 0
     },
     MouseUp : function(e) {
-        for (i = 0; i < ObjPool.objects.length; ++i) {
-            var obj = ObjPool.objects[i];
+        if (Global.MOUSE_BLOCKED) return;
+        var objs = ObjPool.objects.concat();
+        for (i = 0; i < objs.length; ++i) {
+            var obj = objs[i];
             if (obj.hasOwnProperty("onClicked")) {
                 if (this.currentMousePosition.x > (obj.absPos()).x && this.currentMousePosition.x < (obj.absPos()).x + obj.shape.width
                     && this.currentMousePosition.y > (obj.absPos()).y && this.currentMousePosition.y < (obj.absPos()).y + obj.shape.height)
@@ -62,6 +72,7 @@ var EventManager = {
         }
     },
     MouseMove : function(e) {
+        if (Global.MOUSE_BLOCKED) return;
         this.currentMousePosition.x = e.localX;
         this.currentMousePosition.y = e.localY;
         if (Mouse.target != null) {
@@ -85,6 +96,85 @@ var EventManager = {
                     obj.__internal.catchMouse = false;
                     if (obj.hasOwnProperty("onLeaved")) {
                         obj.onLeaved();
+                    }
+                }
+            }
+        }
+    },
+    EnterFrame : function () {
+        time = time + 1;
+        if (time % 3 != 0) return;
+
+        for (var i = 0; i < ObjPool.objects.length; ++i) {
+            var obj = ObjPool.objects[i];
+            if (obj.hasOwnProperty("onFrame")) {
+                obj.onFrame();
+            }
+            if (obj.rigid && obj.hasOwnProperty("onCollision")) {
+                var speed = {x:0, y:0};
+                if (obj.__internal.lastPosition == null) {
+                    obj.__internal.lastPosition = {
+                        x : (obj.absPos()).x,
+                        y : (obj.absPos()).y
+                    };
+                } else {
+                    /*compute speed direction*/
+                    speed.x = (obj.absPos()).x - obj.__internal.lastPosition.x;
+                    speed.y = (obj.absPos()).y - obj.__internal.lastPosition.y;
+
+                    obj.__internal.lastPosition.x = (obj.absPos()).x;
+                    obj.__internal.lastPosition.y = (obj.absPos()).y;
+                }
+
+
+
+                for (var j = 0; j < ObjPool.objects.length; ++j) {
+                    /*TODO(Neil): check pixel collision*/
+                    var anotherObj = ObjPool.objects[j];
+                    if (!anotherObj.rigid) continue;
+                    if (anotherObj == obj) continue;
+
+                    /*first one*/
+                    var x1min = (obj.absPos()).x;
+                    var x1max = (obj.absPos()).x + obj.shape.width;
+                    var y1min = (obj.absPos()).y;
+                    var y1max = (obj.absPos()).y + obj.shape.height;
+
+                    /*second one*/
+                    var x2min = (anotherObj.absPos()).x;
+                    var x2max = (anotherObj.absPos()).x + anotherObj.shape.width - 1;
+                    var y2min = (anotherObj.absPos()).y;
+                    var y2max = (anotherObj.absPos()).y + anotherObj.shape.height - 1;
+
+                    /*check*/
+                    if (x1max > x2min && x1min < x2max && y1max > y2min && y1min < y2max) {
+                        /*collided*/
+                        if (obj.__internal.collidedObjects.indexOf(anotherObj) != -1) {
+                            /*already in*/
+                            continue;
+                        }
+                        obj.__internal.collidedObjects.push(anotherObj);
+
+                        /*compute orientation*/
+                        var direction;
+                        var angle = Math.atan2(speed.y, speed.x);
+                        if (angle <= 3 * PIdiv4 && angle > PIdiv4 ) {
+                            direction = "DOWN";
+                        } else if (angle <= PIdiv4 && angle > -PIdiv4) {
+                            direction = "RIGHT";
+                        } else if (angle <= -PIdiv4 && angle > -3 * PIdiv4) {
+                            direction = "UP";
+                        } else {
+                            direction = "LEFT";
+                        }
+                        obj.onCollision(anotherObj, direction);
+                    } else {
+                        /*lost*/
+                        var index = obj.__internal.collidedObjects.indexOf(anotherObj);
+                        if (index != -1) {
+                            /*already in*/
+                            obj.__internal.collidedObjects.splice(index, 1);
+                        }
                     }
                 }
             }
@@ -184,16 +274,17 @@ function extract(data) {
             dataBuffer[j] = BASE64_CHARS.indexOf(data.charAt(i + j));
         }
 
-        // attention, bgr to rgb convertion!
+        /* attention, bgr to rgb convertion! */
         outputBuffer[0] = (dataBuffer[0] << 2) + ((dataBuffer[1] & 0x30) >> 4);
         outputBuffer[1] = ((dataBuffer[1] & 0x0f) << 4) + ((dataBuffer[2] & 0x3c) >> 2);
         outputBuffer[2] = ((dataBuffer[2] & 0x03) << 6) + dataBuffer[3];
         for (var k = 0; k < outputBuffer.length; k++) {
             if (dataBuffer[k + 1] == 64) break;
-            if (cnt >= 54) { // skip bmp header
-                //if (cnt % 3 == 1) {
-                //    output.writeByte(255); // add alpha channel
-                //};
+            if (cnt >= 54) { /* skip bmp header */
+                /* if (cnt % 3 == 1) {
+                    output.writeByte(255); // add alpha channel
+                };
+                */
                 output.writeByte(outputBuffer[k]);
             }
             cnt++;
@@ -206,7 +297,7 @@ function extract(data) {
 
 function loadBitmapData(width, height, raw) {
     var bmd = Bitmap.createBitmapData(width, height);
-    //trace((extract(raw)).length);
+    /* trace((extract(raw)).length); */
     bmd.setPixels(bmd.rect, extract(raw));
     return bmd;
 }
@@ -265,7 +356,7 @@ var Global = {
     },
     DATA : {
         PLAYER : {
-            HP : 100,
+            HP : 999999,
             ATK : 10,
             DEF : 10,
             GOLD : 0,
@@ -291,12 +382,15 @@ var Global = {
         EMPTY_CANVAS : {},
         MAP_CANVAS : {},
         GUI_CANVAS : {},
+        BACK_CANVAS : {},
         LEFT_STATUS_CANVAS : {},
         RIGHT_STATUS_CANVAS : {}
     },
     CACHE : {
         BMD : {}
-    }
+    },
+    KEY_BLOCKED : false,
+    MOUSE_BLOCKED : false
 };
 
 function MainLoop() {
@@ -325,7 +419,7 @@ function initMap() {
                 var xx = this.x;
                 var yy = this.y;
                 if (Mouse.target != null && Global.MAP[xx][yy].objects.length <= 1) {
-                    placeObj(Mouse.target.type, this.x, this.y);
+                    (placeObj(Mouse.target.type, xx, yy)).rigid = true;
                 } else if (Global.MAP[xx][yy].objects.length > 1) {
                     var obj = Global.MAP[xx][yy].objects.pop();
                     obj.shape.alpha = 0;
@@ -357,7 +451,7 @@ function initPlayer() {
     Global.PLAYER.x = 5;
     Global.PLAYER.y = 5;
     Global.PLAYER.status = Global.DATA.PLAYER;
-    Global.MAP[5][5].obj = Global.PLAYER;
+    Global.MAP[5][5].objects.push(Global.PLAYER);
     Global.MAP[5][5].type = Global.BLOCK_TYPE.PLAYER;
 
     Global.PLAYER.moveUp = function () {
@@ -395,6 +489,11 @@ function initPlayer() {
             Global.MAP[x][y].type = Global.BLOCK_TYPE.PLAYER;
         }
     };
+
+    Global.PLAYER.rigid = true;
+    Global.PLAYER.onCollision = function (obj, dir) {
+        trace(dir);
+    };
 }
 
 function placeObj(type, x, y) {
@@ -407,9 +506,11 @@ function placeObj(type, x, y) {
     Global.MAP[x][y].objects.push(obj);
 
     Global.MAP[x][y].type = Global.BLOCK_TYPE[type];
+    return obj;
 }
 
 function keyDown(key) {
+    if (Global.KEY_BLOCKED) return;
     if (Global.PLAYER != {}) {
         if (key == 87 || key == 38) {
             Global.PLAYER.moveUp();
@@ -423,6 +524,22 @@ function keyDown(key) {
     }
 }
 
+function initListener() {
+    $.frameRate = 30;
+    $.root.mouseEnabled = true;
+
+    $.root.addEventListener("enterFrame", function () {
+        EventManager.EnterFrame();
+    });
+
+    $.root.addEventListener("mouseMove", function (e) {
+        EventManager.MouseMove(e);
+    });
+    $.root.addEventListener("mouseUp", function (e) {
+        EventManager.MouseUp(e);
+    });
+}
+
 function init() {
 
     ScriptManager.clearTimer();
@@ -433,29 +550,21 @@ function init() {
         keyDown(key);
     }, 1<<31 -1);
 
-    $.frameRate = 30;
-    $.root.addEventListener("enterFrame", MainLoop);
 
-    $.root.mouseEnabled = true;
-    $.root.addEventListener("mouseMove", function (e) {
-        EventManager.MouseMove(e);
-    });
-    $.root.addEventListener("mouseUp", function (e) {
-        EventManager.MouseUp(e);
-    });
 
-    //Global.CACHE.BMD.length = Global.BLOCK_TYPE.CNT;
+    /*Global.CACHE.BMD.length = Global.BLOCK_TYPE.CNT;*/
     Global.BLOCK_SIZE.x = Global.BLOCK_SIZE.y = Math.floor(Math.min(Player.width / Global.MAP_SIZE.x, Player.height / Global.MAP_SIZE.y));
     Global.MAP_SCALE = Global.BLOCK_SIZE.x / 32;
 
-    //Global.CANVAS.EMPTY_CANVAS = createCanvas({
-    //    x: 0,
-    //    y: 0,
-    //    lifeTime: 0
-    //});
-    //Player.keyTrigger(function(key){
-    //    keyUp(key);
-    //},INT_MAX,true);
+
+    /*Global.CANVAS.EMPTY_CANVAS = createCanvas({
+       x: 0,
+       y: 0,
+       lifeTime: 0
+    });
+    Player.keyTrigger(function(key){
+       keyUp(key);
+    },INT_MAX,true);*/
 
 }
 
@@ -475,11 +584,9 @@ function editInit() {
     });
 
     var bmp = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
-    var bmp2 = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
-    bmp2.shape.x = 32 * Global.MAP_SCALE;
     bmp.onClicked = function() {
         if (Mouse.target != null && Mouse.target.type == this.type) {
-            // ScriptManager.popEl(Mouse.target);
+            /*ScriptManager.popEl(Mouse.target);*/
             Mouse.target.shape.alpha = 0;
             Mouse.Detach();
         } else {
@@ -489,28 +596,46 @@ function editInit() {
             a.shape.alpha = 0.5;
             Mouse.Attach(a);
         }
-
     };
-    bmp2.onClicked = function() {
-        //trace("bmp2 clicked");
-    };
-    initMap();
 
+    $.createButton({
+        x:0,
+        y:300,
+        parent:Global.CANVAS.GUI_CANVAS,
+        text:"编辑",
+        onclick:function(){
+            Global.KEY_BLOCKED = true;
+            Global.MOUSE_BLOCKED = false;
+        },
+        lifeTime: 0
+    });
+    $.createButton({
+        x:0,
+        y:400,
+        parent:Global.CANVAS.GUI_CANVAS,
+        text:"测试",
+        onclick:function(){
+            Global.KEY_BLOCKED = false;
+            Global.MOUSE_BLOCKED = true;
+        },
+        lifeTime: 0
+    });
 }
 
 function battleFrame(player, monster, turn) {
-    if (turn) {
-        player.status.HP -= 10;
-        trace(player.status.HP);
-        (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("healthBar")).text = player.status.HP;
+    if (!turn) {
+        player.status.HP -= monster.status.ATK;
+        /*trace(player.status.HP);*/
+        (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("hp")).text = player.status.HP;
     } else {
-        monster.status.HP -= 10;
-        trace(monster.status.HP);
-        (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("healthBar")).text = monster.status.HP;
+        monster.status.HP -= player.status.ATK;
+        /*trace(monster.status.HP);*/
+        (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("hp")).text = monster.status.HP;
     }
 
     turn = !turn;
     if (player.status.HP <= 0 || monster.status.HP <= 0) {
+        Global.KEY_BLOCKED = false;
         return;
     }
     timer(function() {
@@ -518,16 +643,38 @@ function battleFrame(player, monster, turn) {
     }, 400);
 }
 
-function enterBattle(player, monster) {
+function enterBattle(player, monster, active) {
+    /*reset monster GUI*/
+    (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("hp")).text = monster.status.HP + "";
+    (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("atk")).text = monster.status.ATK + "";
+    (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("def")).text = monster.status.DEF + "";
+
+    Global.KEY_BLOCKED = true;
     timer(function() {
-        battleFrame(player, monster, false);
+        battleFrame(player, monster, active);
     }, 1000);
 }
 
+function GUIInit() {
+    createText("勇士信息", {x : 30, y : 60, parent : Global.CANVAS.LEFT_STATUS_CANVAS});
+    createText("生命", {x : 30, y : 100, parent : Global.CANVAS.LEFT_STATUS_CANVAS});
+    createText("攻击", {x : 30, y : 140, parent : Global.CANVAS.LEFT_STATUS_CANVAS});
+    createText("防御", {x : 30, y : 180, parent : Global.CANVAS.LEFT_STATUS_CANVAS});
+    (createText(Global.PLAYER.status.HP + "", {x : 80, y : 100, parent : Global.CANVAS.LEFT_STATUS_CANVAS})).name = "hp";
+    (createText(Global.PLAYER.status.ATK + "", {x : 80, y : 140, parent : Global.CANVAS.LEFT_STATUS_CANVAS})).name = "atk";
+    (createText(Global.PLAYER.status.DEF + "", {x : 80, y : 180, parent : Global.CANVAS.LEFT_STATUS_CANVAS})).name = "def";
+
+
+    createText("怪物信息", {x : 30, y : 60, parent : Global.CANVAS.RIGHT_STATUS_CANVAS});
+    createText("生命", {x : 30, y : 100, parent : Global.CANVAS.RIGHT_STATUS_CANVAS});
+    createText("攻击", {x : 30, y : 140, parent : Global.CANVAS.RIGHT_STATUS_CANVAS});
+    createText("防御", {x : 30, y : 180, parent : Global.CANVAS.RIGHT_STATUS_CANVAS});
+    (createText("0", {x : 80, y : 100, parent : Global.CANVAS.RIGHT_STATUS_CANVAS})).name = "hp";
+    (createText("0", {x : 80, y : 140, parent : Global.CANVAS.RIGHT_STATUS_CANVAS})).name = "atk";
+    (createText("0", {x : 80, y : 180, parent : Global.CANVAS.RIGHT_STATUS_CANVAS})).name = "def";
+}
 
 function gameInit() {
-
-
     Global.CANVAS.MAP_CANVAS = createCanvas({
         x: Player.width/2 - Global.MAP_SIZE.x/2 * Global.BLOCK_SIZE.x,
         y: Player.height/2 - Global.MAP_SIZE.y/2 * Global.BLOCK_SIZE.y,
@@ -546,13 +693,9 @@ function gameInit() {
         lifeTime: 0
     });
 
-    (createText("0", {x : 20, y : 50, parent : Global.CANVAS.LEFT_STATUS_CANVAS})).name = "healthBar";
-
-    (createText("0", {x : 20, y : 50, parent : Global.CANVAS.RIGHT_STATUS_CANVAS})).name = "healthBar";
-
-
     initMap();
     initPlayer();
+
 
     var m = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
     m.shape.x = Global.BLOCK_SIZE.x * 6;
@@ -560,10 +703,15 @@ function gameInit() {
     m.x = 6;
     m.y = 6;
     m.status = Global.DATA.SLM_GREEN;
-
-    enterBattle(Global.PLAYER, m);
+    m.rigid = true;
 
 }
 
 init();
 editInit();
+gameInit();
+GUIInit();
+timer(function() {
+    initListener();
+}, 500);
+
