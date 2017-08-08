@@ -3,3 +3,5 @@
 !.gitignore
 
 .idea/workspace.xml
+
+*.xml
