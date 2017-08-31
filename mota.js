@@ -297,9 +297,9 @@ function createBitmap(bitmapData, lifeTime, scale, parent) {
     return bmp;
 }
 
-function createBMPObj(width, height, type, lifetime, scale, parent) {
+function createBMPObj(width, height, bmp_type, type, lifetime, scale, parent) {
     var obj = ObjPool.Create();
-    var raw = Global.RESOURCES.BITMAPS[type];
+    var raw = Global.RESOURCES.BITMAPS[bmp_type];
     var bmd;
     if (Global.CACHE.BMD.hasOwnProperty(raw)) {
         bmd = Global.CACHE.BMD[raw];
@@ -308,6 +308,7 @@ function createBMPObj(width, height, type, lifetime, scale, parent) {
         Global.CACHE.BMD[raw] = bmd;
     }
     obj.shape = createBitmap(bmd, lifetime, scale, parent);
+    obj.bmp_type = bmp_type;
     obj.type = type;
     obj.parent = parent;
     return obj;
@@ -316,6 +317,13 @@ function createBMPObj(width, height, type, lifetime, scale, parent) {
 /***********************************************************************/
 /***********************************************************************/
 
+function createRectangle(parent, color, x, y) {
+    var g = $.createShape({parent: parent, lifeTime:0, x:0, y:0, name:"bg"});
+    g.graphics.beginFill(color);
+    g.graphics.drawRect(0,0,x,y);
+    g.graphics.endFill();
+    return g;
+}
 
 var Global = {
     PLAYER : {},
@@ -324,16 +332,11 @@ var Global = {
       x : 13,
       y : 13
     },
-    BLOCK_TYPE: {
-        CNT : 1 << 8,
-        KEY : {
-            RED : 4,
-            BLUE : 5,
-            YELLOW : 6
-        },
-        PLAYER : 1,
-        SLM_GREEN : 3,
-        EMPTY : 0
+    TYPE: {
+        KEY_RED : "KEY_RED",
+        PLAYER : "PLAYER",
+        SLM_GREEN : "SLM_GREEN",
+        BACKGROUND : "BACKGROUND"
     },
     BLOCK_SIZE: {
         x : 0,
@@ -365,13 +368,17 @@ var Global = {
         }
     },
     CANVAS : {
-        EMPTY_CANVAS : {},
-        MAP_CANVAS : {},
-        GUI_CANVAS : {},
-        BACK_CANVAS : {},
-        LEFT_STATUS_CANVAS : {},
-        RIGHT_STATUS_CANVAS : {}
-    },
+        EMPTY_CANVAS: {},
+        MAP_CANVAS: {},
+        GUI_CANVAS: {},
+        BACK_CANVAS: {},
+        LEFT_STATUS_CANVAS: {},
+        RIGHT_STATUS_CANVAS: {},
+        MSG_CANVAS: {},
+        ITEM_CANVAS: {},
+        DIALOG_CANVAS: {}
+    }
+    ,
     CACHE : {
         BMD : {}
     },
@@ -391,9 +398,8 @@ function initMap() {
         for (var j = 0; j < Global.MAP_SIZE.y; j++) {
             Global.MAP[i][j]= {};
             Global.MAP[i][j].objects = [];
-            var obj =  createBMPObj(32, 32, "BACKGROUND", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+            var obj =  createBMPObj(32, 32, "BACKGROUND", Global.TYPE.BACKGROUND, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
 
-            Global.MAP[i][j].type = Global.BLOCK_TYPE.EMPTY;
             obj.shape.x = i * Global.BLOCK_SIZE.x;
             obj.shape.y = j * Global.BLOCK_SIZE.y;
             obj.x = i;
@@ -403,11 +409,8 @@ function initMap() {
                 var xx = this.x;
                 var yy = this.y;
 
-                if (Mouse.target == null) {
-                    trace("NULL");
-                }
                 if (Mouse.target != null && Global.MAP[xx][yy].objects.length <= 1) {
-                    (placeObj(Mouse.target.type, xx, yy)).rigid = true;
+                    (placeObj(Mouse.target.bmp_type, Mouse.target.type, xx, yy)).rigid = true;
                 } else if (Global.MAP[xx][yy].objects.length > 1) {
                     removeObj(Global.MAP[xx][yy].objects[Global.MAP[xx][yy].objects.length - 1]);
                 }
@@ -432,21 +435,18 @@ function initMap() {
 }
 
 function initPlayer() {
-    Global.PLAYER = createBMPObj(32, 32, "WARRIOR_BLUE", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+    Global.PLAYER = createBMPObj(32, 32, "WARRIOR_BLUE", Global.TYPE.PLAYER, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
     Global.PLAYER.shape.x = Global.BLOCK_SIZE.x * 5;
     Global.PLAYER.shape.y = Global.BLOCK_SIZE.y * 5;
     Global.PLAYER.x = 5;
     Global.PLAYER.y = 5;
     Global.PLAYER.status = clone(Global.DATA.PLAYER);
     Global.MAP[5][5].objects.push(Global.PLAYER);
-    Global.MAP[5][5].type = Global.BLOCK_TYPE.PLAYER;
 
     Global.PLAYER.moveUp = function () {
         if (this.y > 0) {
             this.y -= 1;
             this.shape.y = Global.BLOCK_SIZE.y * this.y;
-            Global.MAP[x][y+1].type = Global.BLOCK_TYPE.EMPTY;
-            Global.MAP[x][y].type = Global.BLOCK_TYPE.PLAYER;
         }
     };
 
@@ -454,8 +454,6 @@ function initPlayer() {
         if (this.y < Global.MAP_SIZE.y - 1) {
             this.y += 1;
             this.shape.y = Global.BLOCK_SIZE.y * this.y;
-            Global.MAP[x][y-1].type = Global.BLOCK_TYPE.EMPTY;
-            Global.MAP[x][y].type = Global.BLOCK_TYPE.PLAYER;
         }
     };
 
@@ -463,8 +461,6 @@ function initPlayer() {
         if (this.x > 0) {
             this.x -= 1;
             this.shape.x = Global.BLOCK_SIZE.x * this.x;
-            Global.MAP[x+1][y].type = Global.BLOCK_TYPE.EMPTY;
-            Global.MAP[x][y].type = Global.BLOCK_TYPE.PLAYER;
         }
     };
 
@@ -472,8 +468,6 @@ function initPlayer() {
         if (this.x < Global.MAP_SIZE.x - 1) {
             this.x += 1;
             this.shape.x = Global.BLOCK_SIZE.x * this.x;
-            Global.MAP[x-1][y].type = Global.BLOCK_TYPE.EMPTY;
-            Global.MAP[x][y].type = Global.BLOCK_TYPE.PLAYER;
         }
     };
 
@@ -483,21 +477,19 @@ function initPlayer() {
         /*trace(dir);*/
     };
     Global.PLAYER.onBattleWin = function (obj) {
-        trace("you win!");
+        log("你赢了");
         removeObj(obj);
     };
 }
 
-function placeObj(type, x, y) {
-    var obj = createBMPObj(32, 32, type, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
+function placeObj(bmp_type, type, x, y) {
+    var obj = createBMPObj(32, 32, bmp_type, type, 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
     obj.shape.x = Global.BLOCK_SIZE.x * x;
     obj.shape.y = Global.BLOCK_SIZE.y * y;
     obj.x = x;
     obj.y = y;
     obj.status = clone(Global.DATA[type]);
     Global.MAP[x][y].objects.push(obj);
-
-    Global.MAP[x][y].type = Global.BLOCK_TYPE[type];
     return obj;
 }
 
@@ -505,7 +497,6 @@ function removeObj(obj) {
     var x = parseInt(obj.x);
     var y = parseInt(obj.y);
     obj.shape.alpha = 0;
-    Global.MAP[x][y].type = Global.BLOCK_TYPE.EMPTY;
     var index = Global.MAP[x][y].objects.indexOf(obj);
     Global.MAP[x][y].objects.splice(index, 1);
     obj.Destroy();
@@ -570,6 +561,43 @@ function init() {
 
 }
 
+function log(msg) {
+    (Global.CANVAS.MSG_CANVAS.getChildByName("msg")).text = msg;
+}
+
+function dialog(text, yes_callback, no_callback) {
+    var textfield = Global.CANVAS.DIALOG_CANVAS.getChildByName('msg');
+    textfield.text = text;
+    if (textfield.width > maxwidth)
+    {
+        textfield.multiline = true;
+        textfield.wordWrap = true;
+        textfield.width = maxwidth;
+    }
+    /*ScriptManager.clearEl();*/
+    if (yes_callback!= null) {
+        ($.createButton({
+            x: Global.CANVAS.DIALOG_CANVAS.width - 80,
+            y: Global.CANVAS.DIALOG_CANVAS.height - 80,
+            parent:Global.CANVAS.DIALOG_CANVAS,
+            text:"好",
+            onclick: yes_callback,
+            lifeTime: 0
+        })).name = 'yes_but';
+    }
+    }
+    if (no_callback != null) {{
+        ($.createButton({
+            x: Global.CANVAS.DIALOG_CANVAS.width - 80,
+            y: Global.CANVAS.DIALOG_CANVAS.height - 40,
+            parent:Global.CANVAS.DIALOG_CANVAS,
+            text:"不好",
+            onclick: no_callback,
+            lifeTime: 0
+        })).name = 'no_but';
+    }
+}
+
 function editInit() {
 
 
@@ -585,14 +613,14 @@ function editInit() {
         lifeTime: 0
     });
 
-    var bmp = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
+    var bmp = createBMPObj(32, 32, "SLM_GREEN", Global.TYPE.SLM_GREEN, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
     bmp.onClicked = function() {
         if (Mouse.target != null && Mouse.target.type == this.type) {
             /*ScriptManager.popEl(Mouse.target);*/
             Mouse.target.shape.alpha = 0;
             Mouse.Detach();
         } else {
-            var a = createBMPObj(32, 32, this.type, 0, Global.MAP_SCALE, 0);
+            var a = createBMPObj(32, 32, this.bmp_type, this.type, 0, Global.MAP_SCALE, 0);
             a.shape.x = (this.absPos()).x;
             a.shape.y = (this.absPos()).y;
             a.shape.alpha = 0.5;
@@ -622,6 +650,13 @@ function editInit() {
         },
         lifeTime: 0
     });
+
+}
+
+function refreshPlayerStatus() {
+    (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("hp")).text = Global.PLAYER.status.HP + "";
+    (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("atk")).text = Global.PLAYER.status.ATK + "";
+    (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("def")).text = Global.PLAYER.status.DEF + "";
 }
 
 function battleFrame(player, monster, turn) {
@@ -703,6 +738,36 @@ function gameInit() {
         lifeTime: 0
     });
 
+    Global.CANVAS.MSG_CANVAS = createCanvas({
+        x: 0,
+        y: (Global.MAP_SIZE.y - 1) * Global.BLOCK_SIZE.y,
+        lifeTime: 0
+    });
+
+    (createText("", {x : 10, y : 15, parent : Global.CANVAS.MSG_CANVAS})).name = "msg";
+
+    var margin = (Player.width - Global.MAP_SIZE.x * Global.BLOCK_SIZE.x) / 2;
+    Global.CANVAS.DIALOG_CANVAS = createCanvas({
+        x: margin + Global.MAP_SIZE.x / 4 * Global.BLOCK_SIZE.x,
+        y: Global.MAP_SIZE.y / 4 * Global.BLOCK_SIZE.y,
+        lifeTime: 0
+    });
+
+    (createRectangle(Global.CANVAS.DIALOG_CANVAS, 0x333333, Global.MAP_SIZE.x / 2 * Global.BLOCK_SIZE.x, Global.MAP_SIZE.y / 2 * Global.BLOCK_SIZE.y));
+    (createText("测试", {x : 10, y : 15, parent : Global.CANVAS.DIALOG_CANVAS})).name = 'msg';
+
+
+
+    dialog("扣血吗？", function () {
+        Global.PLAYER.status.HP -= 10;
+        trace(Global.PLAYER.status.HP);
+        refreshPlayerStatus();
+    }, function () {
+
+    });
+    /*Global.CANVAS.DIALOG_CANVAS.alpha = 0;*/
+
+
     Global.CANVAS.RIGHT_STATUS_CANVAS = createCanvas({
         x: Player.width/2 + Global.MAP_SIZE.x/2 * Global.BLOCK_SIZE.x,
         y: 0,
@@ -711,15 +776,6 @@ function gameInit() {
 
     initMap();
     initPlayer();
-
-
-    /*var m = createBMPObj(32, 32, "SLM_GREEN", 0, Global.MAP_SCALE, Global.CANVAS.MAP_CANVAS);
-    m.shape.x = Global.BLOCK_SIZE.x * 6;
-    m.shape.y = Global.BLOCK_SIZE.y * 6;
-    m.x = 6;
-    m.y = 6;
-    m.status = Global.DATA.SLM_GREEN;
-    m.rigid = true;*/
 
     Global.KEY_BLOCKED = false;
     Global.MOUSE_BLOCKED = false;
