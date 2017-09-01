@@ -33,7 +33,8 @@ var ObjPool = {
                 return {x:absX, y:absY};
             },
             __internal : {
-                collidedObjects : []
+                collidedObjects : [],
+                speed : { x : 0, y : 0}
             }
         };
         this.objects.push(obj);
@@ -102,6 +103,29 @@ var EventManager = {
         }
     },
     EnterFrame : function () {
+        /* delay callback in case objects move. */
+        var funcs = [];
+        for (var i = 0; i < ObjPool.objects.length; ++i) {
+            var obj = ObjPool.objects[i];
+            if (!obj.rigid) continue;
+            var obj = ObjPool.objects[i];
+
+            if (obj.__internal.lastPosition == null) {
+                obj.__internal.lastPosition = {
+                    x : (obj.absPos()).x,
+                    y : (obj.absPos()).y
+                };
+            } else {
+                /*compute speed direction*/
+
+                obj.__internal.speed.x = (obj.absPos()).x - obj.__internal.lastPosition.x;
+                obj.__internal.speed.y = (obj.absPos()).y - obj.__internal.lastPosition.y;
+
+                obj.__internal.lastPosition.x = (obj.absPos()).x;
+                obj.__internal.lastPosition.y = (obj.absPos()).y;
+            }
+        }
+
 
         for (var i = 0; i < ObjPool.objects.length; ++i) {
             var obj = ObjPool.objects[i];
@@ -109,22 +133,6 @@ var EventManager = {
                 obj.onFrame();
             }
             if (obj.rigid && obj.hasOwnProperty("onCollision")) {
-                var speed = {x:0, y:0};
-                if (obj.__internal.lastPosition == null) {
-                    obj.__internal.lastPosition = {
-                        x : (obj.absPos()).x,
-                        y : (obj.absPos()).y
-                    };
-                } else {
-                    /*compute speed direction*/
-                    speed.x = (obj.absPos()).x - obj.__internal.lastPosition.x;
-                    speed.y = (obj.absPos()).y - obj.__internal.lastPosition.y;
-
-                    obj.__internal.lastPosition.x = (obj.absPos()).x;
-                    obj.__internal.lastPosition.y = (obj.absPos()).y;
-                }
-
-
 
                 for (var j = 0; j < ObjPool.objects.length; ++j) {
                     /*TODO(Neil): check pixel collision*/
@@ -155,7 +163,8 @@ var EventManager = {
 
                         /*compute orientation*/
                         var direction;
-                        var angle = Math.atan2(speed.y, speed.x);
+                        var angle = Math.atan2(obj.__internal.speed.y - anotherObj.__internal.speed.y,
+                            obj.__internal.speed.x - anotherObj.__internal.speed.x);
                         if (angle <= 3 * PIdiv4 && angle > PIdiv4 ) {
                             direction = "DOWN";
                         } else if (angle <= PIdiv4 && angle > -PIdiv4) {
@@ -165,7 +174,7 @@ var EventManager = {
                         } else {
                             direction = "LEFT";
                         }
-                        obj.onCollision(anotherObj, direction);
+                        funcs.push([obj.onCollision, anotherObj, direction]);
                     } else {
                         /*lost*/
                         var index = obj.__internal.collidedObjects.indexOf(anotherObj);
@@ -176,6 +185,13 @@ var EventManager = {
                     }
                 }
             }
+        }
+        for (var i = 0; i < funcs.length; i++) {
+            var func = funcs[i];
+            var f = func[0];
+            var arg1 = func[1];
+            var arg2 = func[2];
+            f(arg1, arg2);
         }
     }
 };
@@ -339,7 +355,9 @@ var Global = {
         KEY_RED : "KEY_RED",
         PLAYER : "PLAYER",
         SLM_GREEN : "SLM_GREEN",
-        BACKGROUND : "BACKGROUND"
+        BACKGROUND : "BACKGROUND",
+        WALL : "WALL",
+        DOOR_YELLOW : "DOOR_YELLOW"
     },
     BLOCK_SIZE: {
         x : 0,
@@ -362,11 +380,15 @@ var Global = {
             SPECIAL : {}
         },
         NPC_TRADE : {},
-        KEY_YELLOW : {}
+        KEY_YELLOW : {},
+        WALL : {},
+        DOOR_YELLOW : {}
     },
     MAP_SCALE: 0,
     RESOURCES : {
         BITMAPS : {
+            WALL: "",
+            DOOR_YELLOW: "",
             KEY_YELLOW: "Qk02EAAAAAAAADYAAAAoAAAAIAAAACAAAAABACAAAAAAAAAQAADEDgAAxA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGaIu/9miLv/Zoi7/2aIu/9miLv/Zoi7/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGaIu/9miLv/iKrd/4iq3f+Iqt3/iKrd/4iq3f+Iqt3/iKrd/2aIu/9miLv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/iKrd/4iq3f+Iqt3/iKrd/6rM//+qzP//qsz//6rM//+Iqt3/iKrd/4iq3f9miLv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZoi7/4iq3f+Iqt3/iKrd/4iq3f+Iqt3/iKrd/4iq3f+qzP//qsz//6rM//+qzP//iKrd/4iq3f9miLv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/iKrd/4iq3f+Iqt3/RGaZ/0Rmmf9EZpn/iKrd/4iq3f+qzP//qsz//6rM//+qzP//iKrd/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZoi7/4iq3f+Iqt3/iKrd/0Rmmf9EZpn/RGaZ/0Rmmf9EZpn/iKrd/6rM//+qzP//qsz//6rM//+Iqt3/iKrd/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/iKrd/4iq3f+Iqt3/RGaZ/0Rmmf9EZpn/RGaZ/0Rmmf+Iqt3/qsz//6rM//+qzP//qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGaIu/+Iqt3/qsz//4iq3f9EZpn/RGaZ/0Rmmf9EZpn/RGaZ/4iq3f+qzP//qsz//6rM//+qzP//qsz//4iq3f9miLv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZoi7/4iq3f+qzP//iKrd/4iq3f9EZpn/RGaZ/0Rmmf+Iqt3/iKrd/6rM//+qzP//qsz//6rM//+qzP//iKrd/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/iKrd/6rM//+qzP//iKrd/4iq3f+Iqt3/iKrd/4iq3f+qzP//qsz//6rM//+qzP//qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGaIu/+Iqt3/qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//4iq3f9miLv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZoi7/4iq3f+Iqt3/qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//iKrd/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZoi7/4iq3f+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//qsz//6rM//+Iqt3/iKrd/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/iKrd/4iq3f+qzP//qsz//6rM//+qzP//qsz//6rM//+qzP//iKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/iKrd/4iq3f+Iqt3/qsz//6rM//+qzP//qsz//4iq3f+Iqt3/iKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmiLv/Zoi7/4iq3f+Iqt3/iKrd/4iq3f+Iqt3/iKrd/2aIu/9miLv/Zoi7/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAZoi7/2aIu/9miLv/Zoi7/2aIu/9miLv/AAAAAAAAAAAAAAAAiKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACIqt3/iKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIiq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACIqt3/iKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIiq3f+Iqt3/iKrd/4iq3f+Iqt3/qsz//6rM//+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIiq3f+Iqt3/qsz//4iq3f9miLv/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiKrd/4iq3f+Iqt3/iKrd/2aIu/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACIqt3/iKrd/4iq3f+Iqt3/Zoi7/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
             NPC001: "Qk02EAAAAAAAADYAAAAoAAAAIAAAACAAAAABACAAAAAAAAAQAADEDgAAxA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC7iIj/u4iI/7uIiP+7iIj/u4iI/7uIiP+7iIj/u4iI/7uIiP+7iIj/u4iI/7uIiP+7iIj/u4iI/7uIiP+7iIj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAu4iI/7uIiP/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/7uIiP+7iIj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALuIiP+7iIj/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/7uIiP+7iIj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAu4iI/92qqv/dqqr/3aqq///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/7uIiP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC7iIj/3aqq/92qqv//zMz//8zM///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz//8zM/92qqv/dqqr/3aqq/92qqv/dqqr/u4iI/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALuIiP+7iIj/3aqq///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz//8zM/92qqv/dqqr/3aqq/7uIiP+7iIj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALuIiP/dqqr/3aqq///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz/3aqq/92qqv/dqqr/u4iI/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALuIiP+7iIj/u4iI/wAAAAAAAAAAu4iI/7uIiP/dqqr//8zM///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz//8zM///MzP/dqqr/3aqq/7uIiP+7iIj/AAAAAAAAAAC7iIj/u4iI/7uIiP8AAAAAAAAAAAAAAAC7iIj/u4iI/7uIiP+7iIj/u4iI/wAAAAAAAAAAu4iI/92qqv/dqqr//8zM///MzP//zMz//8zM///MzP//zMz//8zM///MzP//zMz/3aqq/92qqv/dqqr/u4iI/wAAAAAAAAAAu4iI/7uIiP+7iIj/u4iI/7uIiP8AAAAAAAAAALuIiP9mZmb/ZmZm/7uIiP+7iIj/u4iI/7uIiP+7iIj/3aqq/92qqv/dqqr/3aqq///MzP//zMz//8zM///MzP//zMz//8zM/92qqv/dqqr/3aqq/92qqv+7iIj/u4iI/7uIiP+7iIj/u4iI/2ZmZv9mZmb/u4iI/wAAAAAAAAAAu4iI/2ZmZv9mZmb/u4iI/92qqv/dqqr/u4iI/7uIiP+7iIj/u4iI/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv+7iIj/u4iI/7uIiP+7iIj/3aqq/92qqv+7iIj/ZmZm/2ZmZv+7iIj/AAAAAAAAAAC7iIj/ZmZm/2ZmZv+7iIj/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/7uIiP9mZmb/ZmZm/7uIiP8AAAAAAAAAAGaIu/9miLv/Zoi7/7uIiP/dqqr/3aqq///MzP//zMz//8zM/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr/3aqq/92qqv/dqqr//8zM///MzP//zMz//8zM/92qqv/dqqr/u4iI/2aIu/9miLv/Zoi7/wAAAAAAAAAAZoi7/6rM//+Iqt3/u4iI/92qqv//zMz//8zM///MzP//zMz//8zM/92qqv/dqqr/3aqq/7uIiP+7iIj/u4iI/7uIiP/dqqr/3aqq///MzP//zMz//8zM///MzP//zMz/3aqq/92qqv+7iIj/iKrd/6rM//9miLv/AAAAAAAAAABmiLv/qsz//4iq3f+7iIj/3aqq///MzP//zMz//8zM///MzP//zMz/3aqq/92qqv+7iIj/zMzM/8zMzP/MzMz/zMzM/7uIiP/dqqr/3aqq///MzP//zMz//8zM///MzP/dqqr/3aqq/7uIiP+Iqt3/qsz//2aIu/8AAAAAAAAAAGaIu/9miLv/iKrd/7uIiP/dqqr//8zM///MzP//zMz//8zM/92qqv/dqqr/u4iI/8zMzP/MzMz////////////MzMz/zMzM/7uIiP/dqqr/3aqq///MzP//zMz//8zM/92qqv/dqqr/u4iI/4iq3f9miLv/Zoi7/wAAAAAAAAAAAAAAAGaIu/9miLv/u4iI/92qqv//zMz//8zM///MzP/dqqr/3aqq/7uIiP/MzMz/zMzM///////////////////////MzMz/zMzM/7uIiP/dqqr/3aqq///MzP//zMz/3aqq/92qqv+7iIj/Zoi7/2aIu/8AAAAAAAAAAAAAAAAAAAAAu4iI/7uIiP+7iIj/3aqq/92qqv/dqqr/3aqq/92qqv+7iIj/zMzM/8zMzP/////////////////////////////////MzMz/zMzM/7uIiP/dqqr/3aqq/92qqv/dqqr/3aqq/7uIiP+7iIj/u4iI/wAAAAAAAAAAAAAAAAAAAAAAAAAAu4iI/7uIiP/dqqr/3aqq/92qqv/dqqr/3aqq/7uIiP/MzMz////////////////////////////////////////////MzMz/u4iI/92qqv/dqqr/3aqq/92qqv/dqqr/u4iI/7uIiP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAu4iI/7uIiP+7iIj/3aqq/92qqv+7iIj/zMzM/8zMzP///////////4iq3f+Iqt3/iKrd/4iq3f///////////8zMzP/MzMz/u4iI/92qqv/dqqr/u4iI/7uIiP+7iIj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALuIiP+7iIj/u4iI/7uIiP/MzMz///////////+Iqt3/qsz//6rM//+qzP//qsz//4iq3f///////////8zMzP+7iIj/u4iI/7uIiP+7iIj/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzMzM/8zMzP//////////////////////////////////////////////////////zMzM/8zMzP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADMzMz///////////+Iqt3/iKrd/4iq3f+Iqt3/iKrd/4iq3f+Iqt3/iKrd////////////zMzM/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMzMzP9miLv/iKrd/4iq3f+qzP//qsz//6rM//+qzP//qsz//4iq3f+Iqt3/iKrd/2aIu//MzMz/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARGaZ/2aIu/+Iqt3/IkR3/yJEd/8iRHf/qsz//6rM//8iRHf/IkR3/yJEd/+Iqt3/Zoi7/0Rmmf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABEZpn/Zoi7/6rM//////////////////+qzP//qsz//////////////////4iq3f9miLv/RGaZ/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABEZpn/////////////////zMzM/4iq3f+Iqt3/zMzM/////////////////0Rmmf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAERmmf9miLv/Zoi7/4iq3f+Iqt3/iKrd/4iq3f+Iqt3/iKrd/2aIu/9miLv/RGaZ/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAERmmf9EZpn/Zoi7/2aIu/+Iqt3/iKrd/2aIu/9miLv/RGaZ/0Rmmf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABEZpn/RGaZ/0Rmmf9EZpn/RGaZ/0Rmmf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
             WARRIOR_BLUE: "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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIkV3/yJFd/9FZpf/IUV1/0Nlmv8hRXX/Q2eX/yFFdf8hRXX/IUV1/0Vml/8hRXX/IEN1/yJFd/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIEN1/yFFdf9FZpf/RWaX/0Nlmv9FZpf/Q2Wa/yJEef9FZpf/IkV3/0Vml/8iRXf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiRXf/IkV3/0Vml/9DZZr/Q2Wa/0Nlmv8hRXX/Q2Wa/yJDdf9DZZr/IkV3/yFFdf8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiRXf/IkN1/yJDdf9FZpf/IEN1/0Vml/8iQ3X/IkV3/yJFd/8iRXf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIkV3/yJFd/8iRXf/IkV3/yJFd/8iRXf/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
@@ -383,6 +405,7 @@ var Global = {
         RIGHT_STATUS_CANVAS: {},
         MSG_CANVAS: {},
         ITEM_CANVAS: {},
+        KEY_CANVAS: {},
         DIALOG_CANVAS: {}
     }
     ,
@@ -445,12 +468,27 @@ function initMap() {
                     } else if (place_obj.type == Global.TYPE.KEY_YELLOW) {
                         place_obj.onCollision = function (obj, dir) {
                             if (obj.type == Global.TYPE.PLAYER) {
-                                obj.items.push({
+                                obj.keys.push({
                                     bmp_type: place_obj.bmp_type,
                                     type : place_obj.type
                                 });
-                                refreshPlayerItems();
+                                refreshPlayerKeys();
                                 removeObj(place_obj);
+                            }
+                        };
+                    } else if (place_obj.type == Global.TYPE.DOOR_YELLOW) {
+                        place_obj.onCollision = function (obj, dir) {
+                            if (obj.type == Global.TYPE.PLAYER) {
+                                if (obj.openDoor(place_obj.type)) {
+                                    refreshPlayerKeys();
+                                    removeObj(place_obj);
+                                } else {
+                                    log("你还没有黄钥匙");
+                                    if (dir == "LEFT") Global.PLAYER.moveLeft();
+                                    else if (dir == "RIGHT") Global.PLAYER.moveRight();
+                                    else if (dir == "UP") Global.PLAYER.moveUp();
+                                    else if (dir == "DOWN") Global.PLAYER.moveDown();
+                                }
                             }
                         };
                     }
@@ -488,6 +526,7 @@ function initPlayer() {
     /*Global.MAP[5][5].objects.push(Global.PLAYER);*/
 
     Global.PLAYER.items = [];
+    Global.PLAYER.keys = [];
     Global.PLAYER.moveUp = function () {
         if (this.y > 0) {
             this.y -= 1;
@@ -517,13 +556,39 @@ function initPlayer() {
     };
 
     Global.PLAYER.rigid = true;
+    Global.PLAYER.removeOneKey = function (type) {
+        var index = -1;
+        for (var i = 0; i < this.keys.length; i++) {
+            var key = this.keys[i];
+            if (key.type == type) {
+                index = i;
+                break;
+            }
+        }
+        if (index == -1) return false;
+        this.keys.splice(index, 1);
+        return true;
+    };
+    Global.PLAYER.openDoor = function (door) {
+        if (door == Global.TYPE.DOOR_YELLOW) {
+            if (!this.removeOneKey(Global.TYPE.KEY_YELLOW)) {
+                return false;
+            }
+        }
+        return true;
+    };
     Global.PLAYER.onCollision = function (obj, dir) {
         /* TODO: check if it is monster */
+        if (obj.type == Global.TYPE.NPC_TRADE || obj.type == Global.TYPE.WALL) {
+            if (dir == "LEFT") Global.PLAYER.moveRight();
+            else if (dir == "RIGHT") Global.PLAYER.moveLeft();
+            else if (dir == "UP") Global.PLAYER.moveDown();
+            else if (dir == "DOWN") Global.PLAYER.moveUp();
+        }
         if (obj.type == Global.TYPE.SLM_GREEN) {
-            enterBattle(this, obj, true);
+            enterBattle(Global.PLAYER, obj, true);
         }
 
-        /*trace(dir);*/
     };
     Global.PLAYER.onBattleWin = function (obj) {
         log("你赢了");
@@ -553,6 +618,7 @@ function removeObj(obj) {
 
 function keyDown(key) {
     if (Global.KEY_BLOCKED) return;
+    log("");
     if (Global.PLAYER != {}) {
         if (key == 87 || key == 38) {
             Global.PLAYER.moveUp();
@@ -639,10 +705,10 @@ function dialog(text, yes_callback, no_callback) {
     /*ScriptManager.clearEl();*/
     var yes_but = Global.CANVAS.DIALOG_CANVAS.getChildByName('yes_but');
     if (yes_callback != null) {
-        yes_but.alpha = 1.;
+        ScriptManager.pushEl(yes_but);
         Global.SPECIAL.YES_CALLBACK = yes_callback;
     } else {
-        yes_but.alpha = 0;
+        ScriptManager.popEl(yes_but);
         Global.SPECIAL.YES_CALLBACK = function () {};
     }
     var no_but = Global.CANVAS.DIALOG_CANVAS.getChildByName('no_but');
@@ -707,8 +773,12 @@ function refreshPlayerItems() {
     }
 
     var player = Global.PLAYER;
-    var x_offset = 20, y_offset = 0;
+    var x_offset = 20, y_offset = -24;
     for (var i = 0;  i < player.items.length; i++) {
+        if (i % 5 == 0) {
+            x_offset = 20;
+            y_offset += 24;
+        }
         var item = player.items[i];
         var obj = createBMPObj(32, 32, item.bmp_type, item.type, 0, 0.6 * Global.MAP_SCALE, Global.CANVAS.ITEM_CANVAS);
         obj.shape.x = x_offset;
@@ -717,14 +787,71 @@ function refreshPlayerItems() {
             obj.onClicked = item.onClicked;
         }
         x_offset += 24;
-        if (i % 4 == 0 && i != 0) {
+
+    }
+}
+
+function refreshPlayerKeys() {
+    /* clear current items */
+
+    var objs = ObjPool.objects;
+    var garbbage = [];
+    for (var i = 0; i < objs.length; ++i) {
+        var o = objs[i];
+        if (o.parent == Global.CANVAS.KEY_CANVAS) {
+            garbbage.push(o);
+        }
+    }
+    for (var i = 0; i < garbbage.length; ++i) {
+        garbbage[i].Destroy();
+    }
+
+    while (Global.CANVAS.KEY_CANVAS.numChildren > 0) {
+        Global.CANVAS.KEY_CANVAS.removeChildAt(0);
+    }
+
+    var player = Global.PLAYER;
+    var x_offset = 20, y_offset = -24;
+    for (var i = 0;  i < player.keys.length; i++) {
+        if (i % 5 == 0) {
             x_offset = 20;
             y_offset += 24;
         }
+        var item = player.keys[i];
+        var obj = createBMPObj(32, 32, item.bmp_type, item.type, 0, 0.6 * Global.MAP_SCALE, Global.CANVAS.KEY_CANVAS);
+        obj.shape.x = x_offset;
+        obj.shape.y = y_offset;
+        x_offset += 24;
     }
 }
 
 /************************************** item functions end ******************************/
+
+/************************************** edit icons ***********************/
+
+function createIcon(bmp_type, type, x, y) {
+    var obj = createBMPObj(32, 32, bmp_type, type, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
+    obj.shape.x = x;
+    obj.shape.y = y;
+    obj.onClicked = function() {
+        if (Mouse.target != null && Mouse.target.type == this.type) {
+            ScriptManager.popEl(Mouse.target.shape);
+            Mouse.Detach();
+        } else {
+            if (Mouse.target != null && Mouse.target.type != this.type) {
+                ScriptManager.popEl(Mouse.target.shape);
+                Mouse.Detach();
+            }
+            var a = createBMPObj(32, 32, this.bmp_type, this.type, 0, Global.MAP_SCALE, 0);
+            a.shape.x = (this.absPos()).x;
+            a.shape.y = (this.absPos()).y;
+            a.shape.alpha = 0.5;
+            Mouse.Attach(a);
+        }
+    };
+}
+
+/************************************** edit icons end ***********************/
 
 function editInit() {
     Global.CANVAS.MAP_CANVAS = createCanvas({
@@ -739,51 +866,13 @@ function editInit() {
         lifeTime: 0
     });
 
-    var bmp = createBMPObj(32, 32, "SLM_GREEN", Global.TYPE.SLM_GREEN, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
-    bmp.onClicked = function() {
-        if (Mouse.target != null && Mouse.target.type == this.type) {
-            criptManager.popEl(Mouse.target.shape);
-            Mouse.Detach();
-        } else {
-            var a = createBMPObj(32, 32, this.bmp_type, this.type, 0, Global.MAP_SCALE, 0);
-            a.shape.x = (this.absPos()).x;
-            a.shape.y = (this.absPos()).y;
-            a.shape.alpha = 0.5;
-            Mouse.Attach(a);
-        }
-    };
+    createIcon("SLM_GREEN", Global.TYPE.SLM_GREEN, 0, 0);
+    createIcon("NPC001", Global.TYPE.NPC_TRADE, 50, 0);
+    createIcon("KEY_YELLOW", Global.TYPE.KEY_YELLOW, 100, 0);
+    createIcon("KEY_YELLOW", Global.TYPE.WALL, 0, 50);
+    createIcon("NPC001", Global.TYPE.DOOR_YELLOW, 50, 50);
 
-    var npc = createBMPObj(32, 32, "NPC001", Global.TYPE.NPC_TRADE, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
-    npc.shape.x = 50;
-    npc.onClicked = function() {
-        if (Mouse.target != null && Mouse.target.type == this.type) {
-            ScriptManager.popEl(Mouse.target.shape);
-            Mouse.Detach();
-        } else {
-            var a = createBMPObj(32, 32, this.bmp_type, this.type, 0, Global.MAP_SCALE, 0);
-            a.shape.x = (this.absPos()).x;
-            a.shape.y = (this.absPos()).y;
-            a.shape.alpha = 0.5;
-            Mouse.Attach(a);
-        }
-    };
-
-    var key = createBMPObj(32, 32, "KEY_YELLOW", Global.TYPE.KEY_YELLOW, 0, Global.MAP_SCALE, Global.CANVAS.GUI_CANVAS);
-    key.shape.x = 100;
-    key.onClicked = function() {
-        if (Mouse.target != null && Mouse.target.type == this.type) {
-            ScriptManager.popEl(Mouse.target.shape);
-            Mouse.Detach();
-        } else {
-            var a = createBMPObj(32, 32, this.bmp_type, this.type, 0, Global.MAP_SCALE, 0);
-            a.shape.x = (this.absPos()).x;
-            a.shape.y = (this.absPos()).y;
-            a.shape.alpha = 0.5;
-            Mouse.Attach(a);
-        }
-    };
-
-    $.createButton({
+    /*$.createButton({
         x:0,
         y:300,
         parent:Global.CANVAS.GUI_CANVAS,
@@ -804,7 +893,7 @@ function editInit() {
             Global.MOUSE_BLOCKED = true;
         },
         lifeTime: 0
-    });
+    });*/
 
 }
 
@@ -817,13 +906,13 @@ function refreshPlayerStatus() {
 function battleFrame(player, monster, turn) {
     if (!turn) {
         player.status.HP -= monster.status.ATK;
-        /*trace(player.status.HP);*/
-        (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("hp")).text = player.status.HP;
+        (Global.CANVAS.LEFT_STATUS_CANVAS.getChildByName("hp")).text = player.status.HP + "";
     } else {
         monster.status.HP -= player.status.ATK;
         /*trace(monster.status.HP);*/
-        (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("hp")).text = monster.status.HP;
+        (Global.CANVAS.RIGHT_STATUS_CANVAS.getChildByName("hp")).text = monster.status.HP + "";
     }
+
 
     turn = !turn;
     if (player.status.HP <= 0) {
@@ -885,6 +974,13 @@ function GUIInit() {
         y: Player.height / 2,
         lifeTime: 0
     });
+
+    /* key panel */
+    Global.CANVAS.KEY_CANVAS = createCanvas({
+        x: Player.width/2 + Global.MAP_SIZE.x/2 * Global.BLOCK_SIZE.x,
+        y: Player.height / 2,
+        lifeTime: 0
+    });
 }
 
 function gameInit() {
@@ -918,7 +1014,7 @@ function gameInit() {
     (createRectangle(Global.CANVAS.DIALOG_CANVAS, 0x333333, Global.MAP_SIZE.x / 2 * Global.BLOCK_SIZE.x, Global.MAP_SIZE.y / 2 * Global.BLOCK_SIZE.y));
     (createText("", {x : 10, y : 15, parent : Global.CANVAS.DIALOG_CANVAS})).name = 'msg';
 
-    ($.createButton({
+    var yes_but = ($.createButton({
         x: Global.CANVAS.DIALOG_CANVAS.width - 80,
         y: Global.CANVAS.DIALOG_CANVAS.height - 80,
         parent:Global.CANVAS.DIALOG_CANVAS,
@@ -927,7 +1023,9 @@ function gameInit() {
             Global.SPECIAL.YES_CALLBACK();
         },
         lifeTime: 0
-    })).name = 'yes_but';
+    }));
+    yes_but.name = 'yes_but';
+    ScriptManager.popEl(yes_but);
 
     ($.createButton({
         x: Global.CANVAS.DIALOG_CANVAS.width - 80,
